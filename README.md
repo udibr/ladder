@@ -1,4 +1,4 @@
-This repository contains source code for the experiments in a paper titled
+This repository contains source code for the experiments in a [paper](http://arxiv.org/abs/1507.02672) titled
 _Semi-Supervised Learning with Ladder Network_ by A Rasmus, H Valpola, M Honkala,
 M Berglund, and T Raiko.
 

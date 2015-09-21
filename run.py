@@ -237,7 +237,7 @@ def setup_data(p, test_set=False):
     if p.get('unlabeled_samples') is not None:
         training_set_size = p.unlabeled_samples
 
-    train_set = dataset_class("train")
+    train_set = dataset_class(["train"])
 
     # Make sure the MNIST data is in right format
     if p.dataset == 'mnist':
@@ -264,7 +264,7 @@ def setup_data(p, test_set=False):
 
     # Only touch test data if requested
     if test_set:
-        d.test = dataset_class("test")
+        d.test = dataset_class(["test"])
         d.test_ind = numpy.arange(d.test.num_examples)
 
     # Setup optional whitening, only used for Cifar-10
