@@ -139,12 +139,18 @@ def make_datastream(dataset, indices, batch_size,
         n_unlabeled = len(indices)
     assert n_labeled <= n_unlabeled, 'need less labeled than unlabeled'
 
+    all_data = dataset.data_sources[dataset.sources.index('targets')]
+    y = unify_labels(all_data)[indices]
+    if len(y):
+        n_classes = y.max() + 1
+        logger.info('#samples %d #class %d' % (len(y),n_classes))
+        for c in range(n_classes):
+            c_count = (y == c).sum()
+            logger.info('Class %d size %d %f%%' % (c, c_count, float(c_count)/len(y)))
+
     if balanced_classes and n_labeled < n_unlabeled:
         # Ensure each label is equally represented
         logger.info('Balancing %d labels...' % n_labeled)
-        all_data = dataset.data_sources[dataset.sources.index('targets')]
-        y = unify_labels(all_data)[indices]
-        n_classes = y.max() + 1
         assert n_labeled % n_classes == 0
         n_from_each_class = n_labeled / n_classes
 
@@ -228,16 +234,30 @@ def load_and_log_params(cli_params):
 
 
 def setup_data(p, test_set=False):
-    dataset_class, training_set_size = {
-        'cifar10': (CIFAR10, 40000),
-        'mnist': (MNIST, 50000),
-    }[p.dataset]
+    if p.dataset in ['cifar10','mnist']:
+        dataset_class, training_set_size = {
+            'cifar10': (CIFAR10, 40000),
+            'mnist': (MNIST, 50000),
+        }[p.dataset]
+    else:
+        from fuel.datasets import H5PYDataset
+        from fuel.utils import find_in_data_path
+        from functools import partial
+        fn=p.dataset
+        fn=os.path.join(fn, fn + '.hdf5')
+        def dataset_class(which_sets):
+            return H5PYDataset(file_or_path=find_in_data_path(fn),
+                               which_sets=which_sets,
+                               load_in_memory=True)
+        training_set_size = None
+
+    train_set = dataset_class(["train"])
 
     # Allow overriding the default from command line
     if p.get('unlabeled_samples') is not None:
         training_set_size = p.unlabeled_samples
-
-    train_set = dataset_class(["train"])
+    elif training_set_size is None:
+        training_set_size = train_set.num_examples
 
     # Make sure the MNIST data is in right format
     if p.dataset == 'mnist':
@@ -292,7 +312,9 @@ def setup_data(p, test_set=False):
 
 
 def get_error(args):
-    """ Calculate the classification error """
+    """ Calculate the classification error
+    called when evaluating
+    """
     args['data_type'] = args.get('data_type', 'test')
     args['no_load'] = 'g_'
 
@@ -303,17 +325,36 @@ def get_error(args):
     return (1. - correct / float(len(guess))) * 100.
 
 
+def get_layer(args):
+    """ Get the output of the layer just below softmax
+    """
+    args['data_type'] = args.get('data_type', 'test')
+    args['no_load'] = 'g_'
+    args['layer'] = args.get('layer', -1)
+
+    targets, acts = analyze(args)
+
+    return acts
+
+
 def analyze(cli_params):
+    """
+    called when evaluating
+    :return: inputs, result
+    """
     p, _ = load_and_log_params(cli_params)
-    _, data, whiten, cnorm = setup_data(p, test_set=True)
+    _, data, whiten, cnorm = setup_data(p, test_set=(p.data_type == 'test'))
     ladder = setup_model(p)
 
     # Analyze activations
-    dset, indices, calc_batchnorm = {
-        'train': (data.train, data.train_ind, False),
-        'valid': (data.valid, data.valid_ind, True),
-        'test':  (data.test, data.test_ind, True),
-    }[p.data_type]
+    if p.data_type == 'train':
+        dset, indices, calc_batchnorm = data.train, data.train_ind, False
+    elif p.data_type == 'valid':
+        dset, indices, calc_batchnorm = data.valid, data.valid_ind, True
+    elif p.data_type == 'test':
+        dset, indices, calc_batchnorm = data.test, data.test_ind, True
+    else:
+        raise Exception("Unknown data-type %s"%p.data_type)
 
     if calc_batchnorm:
         logger.info('Calculating batch normalization for clean.labeled path')
@@ -359,7 +400,7 @@ def analyze(cli_params):
                          cnorm=cnorm,
                          scheme=SequentialScheme)
 
-    # We want out the values after softmax
+    # If layer=-1 we want out the values after softmax
     outputs = ladder.act.clean.labeled.h[len(ladder.layers) - 1]
 
     # Replace the batch normalization paramameters with the shared variables
@@ -385,9 +426,100 @@ def analyze(cli_params):
 
     # Concatenate all minibatches
     res = [numpy.vstack(minibatches) for minibatches in zip(*res)]
-    inputs = {k: numpy.vstack(v) for k, v in inputs.iteritems()}
+    inputs = {k: numpy.concatenate(v) for k, v in inputs.iteritems()}
 
     return inputs['targets_labeled'], res[0]
+
+def dump_unlabeled_encoder(cli_params):
+    """
+    called when dumping
+    :return: inputs, result
+    """
+    p, _ = load_and_log_params(cli_params)
+    _, data, whiten, cnorm = setup_data(p, test_set=(p.data_type == 'test'))
+    ladder = setup_model(p)
+
+    # Analyze activations
+    if p.data_type == 'train':
+        dset, indices, calc_batchnorm = data.train, data.train_ind, False
+    elif p.data_type == 'valid':
+        dset, indices, calc_batchnorm = data.valid, data.valid_ind, True
+    elif p.data_type == 'test':
+        dset, indices, calc_batchnorm = data.test, data.test_ind, True
+    else:
+        raise Exception("Unknown data-type %s"%p.data_type)
+
+    if calc_batchnorm:
+        logger.info('Calculating batch normalization for clean.labeled path')
+        main_loop = DummyLoop(
+            extensions=[
+                FinalTestMonitoring(
+                    [ladder.costs.class_clean, ladder.error.clean]
+                    + ladder.costs.denois.values(),
+                    make_datastream(data.train, data.train_ind,
+                                    # These need to match with the training
+                                    p.batch_size,
+                                    n_labeled=p.labeled_samples,
+                                    n_unlabeled=len(data.train_ind),
+                                    cnorm=cnorm,
+                                    whiten=whiten, scheme=ShuffledScheme),
+                    make_datastream(data.valid, data.valid_ind,
+                                    p.valid_batch_size,
+                                    n_labeled=len(data.valid_ind),
+                                    n_unlabeled=len(data.valid_ind),
+                                    cnorm=cnorm,
+                                    whiten=whiten, scheme=ShuffledScheme),
+                    prefix="valid_final", before_training=True),
+                ShortPrinting({
+                    "valid_final": OrderedDict([
+                        ('VF_C_class', ladder.costs.class_clean),
+                        ('VF_E', ladder.error.clean),
+                        ('VF_C_de', [ladder.costs.denois.get(0),
+                                     ladder.costs.denois.get(1),
+                                     ladder.costs.denois.get(2),
+                                     ladder.costs.denois.get(3)]),
+                    ]),
+                }, after_training=True, use_log=False),
+            ])
+        main_loop.run()
+
+    # Make a datastream that has all the indices in the labeled pathway
+    ds = make_datastream(dset, indices,
+                         batch_size=p.get('batch_size'),
+                         n_labeled=len(indices),
+                         n_unlabeled=len(indices),
+                         balanced_classes=False,
+                         whiten=whiten,
+                         cnorm=cnorm,
+                         scheme=SequentialScheme)
+
+    # If layer=-1 we want out the values after softmax
+    if p.layer < 0:
+        # ladder.act.clean.unlabeled.h is a dict not a list
+        outputs = ladder.act.clean.unlabeled.h[len(ladder.layers) + p.layer]
+    else:
+        outputs = ladder.act.clean.unlabeled.h[p.layer]
+
+    # Replace the batch normalization paramameters with the shared variables
+    if calc_batchnorm:
+        outputreplacer = TestMonitoring()
+        _, _,  outputs = outputreplacer._get_bn_params(outputs)
+
+    cg = ComputationGraph(outputs)
+    f = cg.get_theano_function()
+
+    it = ds.get_epoch_iterator(as_dict=True)
+    res = []
+
+    # Loop over one epoch
+    for d in it:
+        # Store outputs
+        res += [f(*[d[str(inp)] for inp in cg.inputs])]
+
+    # Concatenate all minibatches
+    res = [numpy.vstack(minibatches) for minibatches in zip(*res)]
+
+    return res[0]
 
 
 def train(cli_params):
@@ -419,7 +551,7 @@ def train(cli_params):
         'No batch norm params in graph - the graph has been cut?'
 
     training_algorithm = GradientDescent(
-        cost=ladder.costs.total, params=all_params,
+        cost=ladder.costs.total, parameters=all_params,
         step_rule=Adam(learning_rate=ladder.lr))
     # In addition to actual training, also do BN variable approximations
     training_algorithm.add_updates(bn_updates)
@@ -428,6 +560,7 @@ def train(cli_params):
         "train": {
             'T_C_class': ladder.costs.class_corr,
             'T_C_de': ladder.costs.denois.values(),
+            'T_T': ladder.costs.total,
         },
         "valid_approx": OrderedDict([
             ('V_C_class', ladder.costs.class_clean),
@@ -490,7 +623,7 @@ def train(cli_params):
                 + ladder.costs.denois.values(),
                 prefix="train", after_epoch=True),
 
-            SaveParams(None, all_params, p.save_dir, after_epoch=True),
+            SaveParams(('train',ladder.costs.total), all_params, p.save_dir, after_epoch=True),
             SaveExpParams(p, p.save_dir, before_training=True),
             SaveLog(p.save_dir, after_training=True),
             ShortPrinting(short_prints),
@@ -562,7 +695,7 @@ if __name__ == "__main__":
         a("--unlabeled-samples", help="How many unsupervised samples are used",
           type=int, default=default(None), nargs='+')
         a("--dataset", type=str, default=default(['mnist']), nargs='+',
-          choices=['mnist', 'cifar10'], help="Which dataset to use")
+          help="Which dataset to use. mnist, cifar10 or your own hdf5")
         a("--lr", help="Initial learning rate",
           type=float, default=default([0.002]), nargs='+')
         a("--lrate-decay", help="When to linearly start decaying lrate (0-1)",
@@ -614,6 +747,15 @@ if __name__ == "__main__":
     load_cmd.add_argument('--data-type', type=str, default='test',
                           help="Data set to evaluate on")
 
+    # DUMP
+    dump_cmd = subparsers.add_parser('dump', help='Store the output of an encoder layer for all inputs')
+    dump_cmd.add_argument('load_from', type=str,
+                          help="Destination to load the state from, and where to save the dump")
+    dump_cmd.add_argument('--data-type', type=str, default='test',
+                          help="Data set to evaluate on")
+    dump_cmd.add_argument("--layer", type=int, default=-1,
+                          help="which layer to dump (default top)")
+
     args = ap.parse_args()
 
     subp = subprocess.Popen(['git', 'rev-parse', 'HEAD'],
@@ -634,7 +776,11 @@ if __name__ == "__main__":
 
         err = get_error(vars(args))
         logger.info('Test error: %f' % err)
-
+    elif args.cmd == 'dump':
+        layer = dump_unlabeled_encoder(vars(args))
+        fname = os.path.join(args.load_from,'layer%d'%args.layer)
+        logger.info("Saving dump to %s" % fname)
+        numpy.save(fname, layer)
     elif args.cmd == "train":
         listdicts = {k: v for k, v in vars(args).iteritems() if type(v) is list}
         therest = {k: v for k, v in vars(args).iteritems() if type(v) is not list}
