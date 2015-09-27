@@ -85,7 +85,7 @@ class ShortPrinting(Printing):
 
 class SaveParams(SimpleExtension):
     """Finishes the training process when triggered."""
-    def __init__(self, trigger_var, params, save_path, **kwargs):
+    def __init__(self, trigger_var, params, save_path, save_every=10, **kwargs):
         super(SaveParams, self).__init__(**kwargs)
         if trigger_var is None:
             self.var_name = None
@@ -95,8 +95,10 @@ class SaveParams(SimpleExtension):
         self.params = params
         self.to_save = {}
         self.best_value = None
-        self.add_condition('after_training', self.save)
-        self.add_condition('on_interrupt', self.save)
+        self.add_condition(['after_training'], self.save)
+        self.add_condition(['on_interrupt'], self.save)
+        self.save_every = save_every
+        self.save_every_count = 0
 
     def save(self, which_callback, *args):
         if self.var_name is None:
@@ -106,12 +108,16 @@ class SaveParams(SimpleExtension):
         np.savez_compressed(path, **self.to_save)
 
     def do(self, which_callback, *args):
+        self.save_every_count += 1
+        if self.save_every_count % self.save_every == 0:
+            self.save(which_callback, *args)
         if self.var_name is None:
             return
         val = self.main_loop.log.current_row[self.var_name]
         if self.best_value is None or val < self.best_value:
             self.best_value = val
-        self.to_save = {v.name: v.get_value() for v in self.params}
+            logger.info('Best value %f' % val)
+            self.to_save = {v.name: v.get_value() for v in self.params}
 
 
 class SaveExpParams(SimpleExtension):
@@ -133,7 +139,7 @@ class SaveLog(SimpleExtension):
         self.show = show if show is not None else []
 
     def do(self, which_callback, *args):
-        df = self.main_loop.log.to_dataframe()
+        df = DataFrame.from_dict(self.main_loop.log, orient='index')
         df.to_hdf(os.path.join(self.dir, 'log'), 'log', mode='w',
                   complevel=5, complib='blosc')
 
