@@ -12,6 +12,7 @@ import numpy
 import time
 import theano
 from theano.tensor.type import TensorType
+from pandas import DataFrame
 
 from blocks.algorithms import GradientDescent, Adam
 from blocks.extensions import FinishAfter
@@ -148,6 +149,9 @@ def make_datastream(dataset, indices, batch_size,
             c_count = (y == c).sum()
             logger.info('Class %d size %d %f%%' % (c, c_count, float(c_count)/len(y)))
 
+    # Get unlabeled indices
+    i_unlabeled = indices[:n_unlabeled]
+
     if balanced_classes and n_labeled < n_unlabeled:
         # Ensure each label is equally represented
         logger.info('Balancing %d labels...' % n_labeled)
@@ -156,13 +160,10 @@ def make_datastream(dataset, indices, batch_size,
 
         i_labeled = []
         for c in range(n_classes):
-            i = (indices[y == c])[:n_from_each_class]
+            i = (i_unlabeled[y[:n_unlabeled] == c])[:n_from_each_class]
             i_labeled += list(i)
     else:
         i_labeled = indices[:n_labeled]
-
-    # Get unlabeled indices
-    i_unlabeled = indices[:n_unlabeled]
 
     ds = SemiDataStream(
         data_stream_labeled=Whitening(
@@ -633,7 +634,7 @@ def train(cli_params):
     main_loop.run()
 
     # Get results
-    df = main_loop.log.to_dataframe()
+    df = DataFrame.from_dict(main_loop.log.experiment_params, orient='index')
     col = 'valid_final_error_rate_clean'
     logger.info('%s %g' % (col, df[col].iloc[-1]))
 
