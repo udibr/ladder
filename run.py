@@ -149,7 +149,7 @@ def make_datastream(dataset, indices, batch_size,
     :param scheme:
     :return:
     """
-    if isinstance(n_labeled,list):
+    if isinstance(n_labeled,tuple):
         assert balanced_classes
         n_labeled_list = n_labeled
         n_labeled = sum(n_labeled) if len(n_labeled) > 0 else 0
@@ -192,13 +192,13 @@ def make_datastream(dataset, indices, batch_size,
                 i = (i_unlabeled[y[:n_unlabeled] == c])[:n]
                 ids += list(i)
             i_labeled += ids
-            if dseed:
-                rng = numpy.random.RandomState(seed=dseed)
-                rng.shuffle(i_labeled)
-            else:
-                # we must have some form of shuffling
-                rng = numpy.random.RandomState(seed=1)
-                rng.shuffle(i_labeled)
+        if dseed:
+            rng = numpy.random.RandomState(seed=dseed)
+            rng.shuffle(i_labeled)
+        else:
+            # we must have some form of shuffling
+            rng = numpy.random.RandomState(seed=1)
+            rng.shuffle(i_labeled)
     else:
         i_labeled = indices[:n_labeled]
 
@@ -730,7 +730,7 @@ if __name__ == "__main__":
         a("--dseed", help="Data permutation seed, defaults to 'seed'",
           type=int, default=default([None]), nargs='+')
         a("--labeled-samples", help="How many supervised samples are used",
-          type=int, default=default(None), nargs='+', action=funcs([tuple, to_int, chop]))
+          type=str, default=default(None), nargs='+', action=funcs([tuple, to_int, chop]))
         a("--unlabeled-samples", help="How many unsupervised samples are used",
           type=int, default=default(None), nargs='+')
         a("--dataset", type=str, default=default(['mnist']), nargs='+',
