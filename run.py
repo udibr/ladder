@@ -131,7 +131,30 @@ def unify_labels(y):
 def make_datastream(dataset, indices, batch_size,
                     n_labeled=None, n_unlabeled=None,
                     balanced_classes=True, whiten=None, cnorm=None,
-                    scheme=ShuffledScheme):
+                    scheme=ShuffledScheme, dseed=None):
+    """
+
+    :param dataset:
+    :param indices:
+    :param batch_size:
+    :param n_labeled: None, int, list
+        if None or 0 then all indices are used as labeled data.
+        otherwise only the first n_labeled indices are used as labeled.
+        If a list then balanced_classes must be true and the list specificy
+         the number of examples to take from each category.
+    :param n_unlabeled:
+    :param balanced_classes:
+    :param whiten:
+    :param cnorm:
+    :param scheme:
+    :return:
+    """
+    if isinstance(n_labeled,list):
+        assert balanced_classes
+        n_labeled_list = n_labeled
+        n_labeled = sum(n_labeled) if len(n_labeled) > 0 else 0
+    else:
+        n_labeled_list = None
     if n_labeled is None or n_labeled == 0:
         n_labeled = len(indices)
     if batch_size is None:
@@ -144,6 +167,7 @@ def make_datastream(dataset, indices, batch_size,
     y = unify_labels(all_data)[indices]
     if len(y):
         n_classes = y.max() + 1
+        assert n_labeled_list is None or len(n_labeled_list) == n_classes
         logger.info('#samples %d #class %d' % (len(y),n_classes))
         for c in range(n_classes):
             c_count = (y == c).sum()
@@ -160,8 +184,21 @@ def make_datastream(dataset, indices, batch_size,
 
         i_labeled = []
         for c in range(n_classes):
-            i = (i_unlabeled[y[:n_unlabeled] == c])[:n_from_each_class]
-            i_labeled += list(i)
+            n_from_class = n_from_each_class if n_labeled_list is None else n_labeled_list[c]
+            # if a class does not have enough examples, then duplicate
+            ids = []
+            while len(ids) < n_from_class:
+                n = n_from_class - len(ids)
+                i = (i_unlabeled[y[:n_unlabeled] == c])[:n]
+                ids += list(i)
+            i_labeled += ids
+            if dseed:
+                rng = numpy.random.RandomState(seed=dseed)
+                rng.shuffle(i_labeled)
+            else:
+                # we must have some form of shuffling
+                rng = numpy.random.RandomState(seed=1)
+                rng.shuffle(i_labeled)
     else:
         i_labeled = indices[:n_labeled]
 
@@ -583,7 +620,8 @@ def train(cli_params):
                         n_labeled=p.labeled_samples,
                         n_unlabeled=p.unlabeled_samples,
                         whiten=whiten,
-                        cnorm=cnorm),
+                        cnorm=cnorm,
+                        dseed=p.dseed),
         model=Model(ladder.costs.total),
         extensions=[
             FinishAfter(after_n_epochs=p.num_epochs),
@@ -692,7 +730,7 @@ if __name__ == "__main__":
         a("--dseed", help="Data permutation seed, defaults to 'seed'",
           type=int, default=default([None]), nargs='+')
         a("--labeled-samples", help="How many supervised samples are used",
-          type=int, default=default(None), nargs='+')
+          type=int, default=default(None), nargs='+', action=funcs([tuple, to_int, chop]))
         a("--unlabeled-samples", help="How many unsupervised samples are used",
           type=int, default=default(None), nargs='+')
         a("--dataset", type=str, default=default(['mnist']), nargs='+',
@@ -723,7 +761,7 @@ if __name__ == "__main__":
         a("--denoising-cost-x", help="Weight of the denoising cost.",
           type=str, default=default([(0.,)]), nargs='+',
           action=funcs([tuple, to_float, chop]))
-        a("--decoder-spec", help="List of decoding function types",
+        a("--decoder-spec", help="List of decoding function types", nargs='+',
           type=str, default=default(['sig']), action=funcs([tuple, chop, rep]))
 
         # Hyperparameters used for Cifar training
