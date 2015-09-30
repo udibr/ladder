@@ -651,7 +651,7 @@ def train(cli_params):
                                 whiten=whiten, cnorm=cnorm,
                                 scheme=ShuffledScheme),
                 prefix="valid_final",
-                after_n_epochs=p.num_epochs),
+                after_n_epochs=p.num_epochs, after_training=True),
 
             TrainingDataMonitoring(
                 [ladder.costs.total, ladder.costs.class_corr,
