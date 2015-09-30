@@ -599,11 +599,13 @@ def train(cli_params):
             ('V_C_class', ladder.costs.class_clean),
             ('V_E', ladder.error.clean),
             ('V_C_de', ladder.costs.denois.values()),
+            ('V_T', ladder.costs.total),
         ]),
         "valid_final": OrderedDict([
             ('VF_C_class', ladder.costs.class_clean),
             ('VF_E', ladder.error.clean),
             ('VF_C_de', ladder.costs.denois.values()),
+            ('V_T', ladder.costs.total),
         ]),
     }
 
@@ -625,7 +627,7 @@ def train(cli_params):
             # running average estimates of the batch normalization
             # parameters, mean and variance
             ApproxTestMonitoring(
-                [ladder.costs.class_clean, ladder.error.clean]
+                [ladder.costs.class_clean, ladder.error.clean, ladder.costs.total]
                 + ladder.costs.denois.values(),
                 make_datastream(data.valid, data.valid_ind,
                                 p.valid_batch_size, whiten=whiten, cnorm=cnorm,
@@ -636,7 +638,7 @@ def train(cli_params):
             # estimate batch normalization parameters from training data and
             # then do another pass to calculate the validation error.
             FinalTestMonitoring(
-                [ladder.costs.class_clean, ladder.error.clean]
+                [ladder.costs.class_clean, ladder.error.clean, ladder.costs.total]
                 + ladder.costs.denois.values(),
                 make_datastream(data.train, data.train_ind,
                                 p.batch_size,
