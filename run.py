@@ -192,13 +192,8 @@ def make_datastream(dataset, indices, batch_size,
                 i = (i_unlabeled[y[:n_unlabeled] == c])[:n]
                 ids += list(i)
             i_labeled += ids
-        if dseed:
-            rng = numpy.random.RandomState(seed=dseed)
-            rng.shuffle(i_labeled)
-        else:
-            # we must have some form of shuffling
-            rng = numpy.random.RandomState(seed=1)
-            rng.shuffle(i_labeled)
+        # no need to shuffle the samples because latter
+        # ds=SemiDataStream(...,iteration_scheme=ShuffledScheme,...)
     else:
         i_labeled = indices[:n_labeled]
 
@@ -672,7 +667,7 @@ def train(cli_params):
     main_loop.run()
 
     # Get results
-    df = DataFrame.from_dict(main_loop.log.experiment_params, orient='index')
+    df = DataFrame.from_dict(main_loop.log, orient='index')
     col = 'valid_final_error_rate_clean'
     logger.info('%s %g' % (col, df[col].iloc[-1]))
 
