@@ -11,7 +11,7 @@ from theano.sandbox.cuda.blas import GpuCorrMM
 from theano.sandbox.cuda.basic_ops import gpu_contiguous
 
 from blocks.bricks.cost import SquaredError
-from blocks.bricks.cost import CategoricalCrossEntropy, MisclassificationRate
+from blocks.bricks.cost import CategoricalCrossEntropy, MisclassificationRate, Cost
 from blocks.graph import add_annotation, Annotation
 from blocks.roles import add_role, PARAMETER, WEIGHT, BIAS
 
@@ -20,6 +20,29 @@ from nn import maxpool_2d, global_meanpool_2d, BNPARAM
 
 logger = logging.getLogger('main.model')
 floatX = theano.config.floatX
+
+from blocks.bricks.base import application
+class MisclassificationRateIV(Cost):
+    """Calculates the misclassification rate for a mini-batch.
+
+    Parameters
+    ----------
+
+    """
+    def __init__(self, poos=0.23):
+        self.poos = poos
+        super(MisclassificationRateIV, self).__init__()
+
+    @application(outputs=["error_rate"])
+    def apply(self, y, y_hat):
+        # Support checkpoints that predate self.top_k
+        top_k = getattr(self, 'top_k', 1)
+        mistakes = T.neq(y, y_hat.argmax(axis=1))
+
+        Q = y_hat.shape[1]  # y.max()
+        yhot = (y[:, np.newaxis] == np.arange(Q)).T
+        mistakes = T.dot(yhot, mistakes) / yhot.sum(axis=1,dtype=floatX)
+        return (1. - self.poos)*mistakes[1:].mean() + self.poos * mistakes[0]
 
 
 class LadderAE():
@@ -275,7 +298,7 @@ class LadderAE():
         costs.total.name = 'cost_total'
 
         # Classification error
-        mr = MisclassificationRate()
+        mr = MisclassificationRateIV()
         self.error.clean = mr.apply(y, clean.labeled.h[top]) * np.float32(100.)
         self.error.clean.name = 'error_rate_clean'
 
