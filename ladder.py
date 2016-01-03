@@ -318,7 +318,7 @@ class LadderAE():
         # Costs
         y = target_labeled.flatten()
 
-        Q = self.layer_dims[top]
+        Q = int(self.layer_dims[top][0])
         logger.info('Q=%d'%Q)
         costs.class_clean = CategoricalCrossEntropyIV(Q=Q).apply(y, clean.labeled.h[top])
         costs.class_clean.name = 'cost_class_clean'
