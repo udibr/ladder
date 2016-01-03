@@ -229,10 +229,13 @@ class LadderAE():
 
             if z_est is not None:
                 # Denoising cost
-                if z_clean_s:
-                    z_est_norm = (z_est - z_clean_m) / z_clean_s
-                else:
+
+                if z_clean_s and self.p.zestbn == 'bugfix':
+                    z_est_norm = (z_est - z_clean_m) / T.sqrt(z_clean_s + np.float32(1e-10))
+                elif z_clean_s is None or self.p.zestbn == 'no':
                     z_est_norm = z_est
+                else:
+                    assert False, 'Not supported path'
 
                 se = SquaredError('denois' + str(i))
                 costs.denois[i] = se.apply(z_est_norm.flatten(2),
@@ -561,7 +564,7 @@ class LadderAE():
             z_est = nonlin(z_lat, 'lat') if u is None else \
                 nonlin(z_lat, 'lat') + nonlin(u, 'ver', False)
 
-        elif g_type in ['comparison_g5']:
+        elif g_type in ['comparison_g5', 'gauss']:
             # Gaussian assumption on z: (z - mu) * v + mu
             if u is None:
                 b1 = bi(0., 'b1')
