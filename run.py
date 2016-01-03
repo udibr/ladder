@@ -152,7 +152,7 @@ def make_datastream(dataset, indices, batch_size,
     """
     if isinstance(n_labeled,tuple):
         assert balanced_classes
-        n_labeled_list = n_labeled
+        n_labeled_list = n_labeled if len(n_labeled) > 1 else None
         n_labeled = sum(n_labeled) if len(n_labeled) > 0 else 0
     else:
         n_labeled_list = None
