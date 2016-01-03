@@ -36,13 +36,11 @@ class MisclassificationRateIV(Cost):
 
     @application(outputs=["error_rate"])
     def apply(self, y, y_hat):
-        # Support checkpoints that predate self.top_k
-        top_k = getattr(self, 'top_k', 1)
         mistakes = T.neq(y, y_hat.argmax(axis=1))
 
         yhot = to_one_hot(y, y_hat.shape[1], dtype=floatX)
         yhot = yhot.T
-        mistakes = T.dot(yhot, mistakes) / yhot.sum(axis=1,dtype=floatX)
+        mistakes = T.dot(yhot, mistakes) / (yhot.sum(axis=1) + 1e-4)
         return (1. - self.poos)*mistakes[1:].mean() + self.poos * mistakes[0]
 
 
