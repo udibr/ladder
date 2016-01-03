@@ -22,6 +22,7 @@ logger = logging.getLogger('main.model')
 floatX = theano.config.floatX
 
 from blocks.bricks.base import application
+from theano.tensor.extra_ops import to_one_hot
 class MisclassificationRateIV(Cost):
     """Calculates the misclassification rate for a mini-batch.
 
@@ -39,8 +40,8 @@ class MisclassificationRateIV(Cost):
         top_k = getattr(self, 'top_k', 1)
         mistakes = T.neq(y, y_hat.argmax(axis=1))
 
-        Q = y_hat.shape[1]  # y.max()
-        yhot = (y[:, np.newaxis] == T.arange(Q)).T
+        yhot = to_one_hot(y, y_hat.shape[1], dtype=floatX)
+        yhot = yhot.T
         mistakes = T.dot(yhot, mistakes) / yhot.sum(axis=1,dtype=floatX)
         return (1. - self.poos)*mistakes[1:].mean() + self.poos * mistakes[0]
 
