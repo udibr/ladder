@@ -77,7 +77,7 @@ class CategoricalCrossEntropyIV(Cost):
 
     @application(outputs=["cost"])
     def apply(self, y, y_hat):
-        return objective(y, y_hat, P)
+        return objective(y, y_hat, self.P)
 
 class LadderAE():
     def __init__(self, p):
