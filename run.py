@@ -141,7 +141,8 @@ def make_datastream(dataset, indices, batch_size,
         if None or 0 then all indices are used as labeled data.
         otherwise only the first n_labeled indices are used as labeled.
         If a list then balanced_classes must be true and the list specificy
-         the number of examples to take from each category.
+         the number of examples to take from each category. If a category is
+         too small than samples are repeated
     :param n_unlabeled:
     :param balanced_classes:
     :param whiten:
@@ -658,8 +659,8 @@ def train(cli_params):
                  training_algorithm.total_gradient_norm]
                 + ladder.costs.denois.values(),
                 prefix="train", after_epoch=True),
-
-            SaveParams(('train',ladder.costs.total), all_params, p.save_dir, after_epoch=True),
+            # save model whenever we have best validation result another option `('train',ladder.costs.total)`
+            SaveParams(('valid_approx',ladder.costs.class_clean), all_params, p.save_dir, after_epoch=True),
             SaveExpParams(p, p.save_dir, before_training=True),
             SaveLog(p.save_dir, after_training=True),
             ShortPrinting(short_prints),
@@ -726,7 +727,12 @@ if __name__ == "__main__":
           type=int, default=default([1]), nargs='+')
         a("--dseed", help="Data permutation seed, defaults to 'seed'",
           type=int, default=default([None]), nargs='+')
-        a("--labeled-samples", help="How many supervised samples are used",
+        a("--labeled-samples", help="How many supervised samples are used. "
+        "By default all indices are used as labeled data. "
+        "If a number is given then only the first samples are used as labeled. "
+        "If a list is given then the list specificy the number of samples to "
+        "take from each category and if a category is too small than samples "
+        "are repeated",
           type=str, default=default(None), nargs='+', action=funcs([tuple, to_int, chop]))
         a("--unlabeled-samples", help="How many unsupervised samples are used",
           type=int, default=default(None), nargs='+')
@@ -760,8 +766,6 @@ if __name__ == "__main__":
           action=funcs([tuple, to_float, chop]))
         a("--decoder-spec", help="List of decoding function types", nargs='+',
           type=str, default=default(['sig']), action=funcs([tuple, chop, rep]))
-        a("--zestbn", type=str, default=default(['bugfix']), nargs='+',
-          choices=['bugfix', 'no'], help="How to do zest bn")
 
         # Hyperparameters used for Cifar training
         a("--contrast-norm", help="Scale of contrast normalization (0=off)",
