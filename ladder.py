@@ -43,6 +43,41 @@ class MisclassificationRateIV(Cost):
         mistakes = T.dot(yhot, mistakes) / (yhot.sum(axis=1) + 1e-4)
         return (1. - self.poos)*mistakes[1:].mean() + self.poos * mistakes[0]
 
+def objective(y_true, y_pred, P, alpha=0.03, beta=0.1):
+    '''Expects a binary class matrix instead of a vector of scalar classes.
+    '''
+    y_true = to_one_hot(y_true, y_pred.shape[1], dtype=floatX)
+    y0 = y_true[:,0]  # In training, indicate we dont know the label (different from out-of-set)
+    y1 = 1-y0  # indicate we know the label
+    # we want to reduce cross entrophy of labeled data
+    cost0 = T.nnet.categorical_crossentropy(y_pred, y_true)
+    cost0 = T.dot(y1, cost0) / y1.sum()  # average cost per labeled example
+
+    # we want to reduce overhaul entrophy of unlabeled data
+    cost1 = T.nnet.categorical_crossentropy(y_pred, y_pred)
+    cost1 = alpha * T.dot(y0, cost1) / y0.sum()  # average cost per unlabeled example
+
+    # we want to increase the average entrophy in each batch
+    # scale preds so that the class probas of each sample sum to 1
+    y_pred /= y_pred.sum(axis=-1, keepdims=True)
+    # average over batch
+    y_pred = T.dot(y0[None,:], y_pred) / y0.sum()
+#     cost2 = - beta * K.categorical_crossentropy(y_pred, y_pred)
+    P = P.reshape(y_pred.shape)
+    cost3 = beta * T.nnet.categorical_crossentropy(y_pred/P, P)
+    return cost0 + cost1 + cost3
+
+class CategoricalCrossEntropyIV(Cost):
+    def __init__(self, Q, poos=0.23):
+        self.poos = poos
+        super(CategoricalCrossEntropyIV, self).__init__()
+        P = (1.-poos)/(Q-1.)*np.ones(Q)
+        P[0] = poos
+        self.P = theano.shared(np.array(P.reshape((-1,1)),dtype=theano.config.floatX), name='P')
+
+    @application(outputs=["cost"])
+    def apply(self, y, y_hat):
+        return objective(y, y_hat, P)
 
 class LadderAE():
     def __init__(self, p):
@@ -283,10 +318,12 @@ class LadderAE():
         # Costs
         y = target_labeled.flatten()
 
-        costs.class_clean = CategoricalCrossEntropy().apply(y, clean.labeled.h[top])
+        Q = self.layer_dims[top]
+        logger.info('Q=%d'%Q)
+        costs.class_clean = CategoricalCrossEntropyIV(Q=Q).apply(y, clean.labeled.h[top])
         costs.class_clean.name = 'cost_class_clean'
 
-        costs.class_corr = CategoricalCrossEntropy().apply(y, corr.labeled.h[top])
+        costs.class_corr = CategoricalCrossEntropyIV(Q=Q).apply(y, corr.labeled.h[top])
         costs.class_corr.name = 'cost_class_corr'
 
         # This will be used for training
