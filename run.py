@@ -766,6 +766,8 @@ if __name__ == "__main__":
           action=funcs([tuple, to_float, chop]))
         a("--decoder-spec", help="List of decoding function types", nargs='+',
           type=str, default=default(['sig']), action=funcs([tuple, chop, rep]))
+        a("--zestbn", type=str, default=default(['bugfix']), nargs='+',
+          choices=['bugfix', 'no'], help="How to do zest bn")
 
         # Hyperparameters used for Cifar training
         a("--contrast-norm", help="Scale of contrast normalization (0=off)",
