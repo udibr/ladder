@@ -106,7 +106,7 @@ class LadderAE():
             p = self.shared(np.float32(1), name, role=BNPARAM)
             p_max = self.shared(p_max_val, name + '_max', role=BNPARAM)
             update = [(p, T.clip(p + np.float32(1), np.float32(0), p_max)),
-                      (p_max, p_max_val)]
+                      (p_max, p_max)]
         return (p, update)
 
     def noise_like(self, x):
