@@ -746,7 +746,9 @@ if __name__ == "__main__":
           type=int, default=default([100]), nargs='+')
         a("--valid-batch-size", help="Minibatch size for validation data",
           type=int, default=default([100]), nargs='+')
-        a("--valid-set-size", help="Number of examples in validation set",
+        a("--valid-set-size", help="Upper limit on number of examples in "
+                                   "validation set, taken from the examples "
+                                   "not used in unlabeled samples",
           type=int, default=default([10000]), nargs='+')
 
         # Hyperparameters controlling supervised path
